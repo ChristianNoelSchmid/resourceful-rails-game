@@ -1,0 +1,20 @@
+MapData (ScriptableObject) - Contains all information about a specific map
+    -   Nodes           (Node[])
+    -   Segments        (NodeSegment[])
+    -   Board           (GameObject)
+    -   MapTokens       (MapTokenTemplates)
+
+MapTokenTemplates(ScriptableObject) - All template objects representing different pieces on a particular map
+    -   Clear           (GameObject)
+    -   Mountain        (GameObject)
+    -   SmallCity       (GameObject)
+    -   MediumCity      (GameObject)
+    -   MajorCity       (GameObject)
+    -   River           (? [Part of the map background?])
+    -   Water           (? [Part of the map background?])
+
+PlayerTokenTemplates(ScriptableObject) - All information related to a player's pieces on a map 
+(decoupling from MapData allows mix and matching, based on player preference [if desired])
+    -   TemplateName    (String) [ie. British Rail Class 150, Taiwan Railway EMU100 series, etc.]
+    -   TrainToken      (GameObject)
+    -   RailToken       (GameObject)
