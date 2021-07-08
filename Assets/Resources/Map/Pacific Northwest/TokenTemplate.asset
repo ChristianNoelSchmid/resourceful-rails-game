@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fef85e956d1bb0800bc0879c3d7500c0, type: 3}
+  m_Name: TokenTemplate
+  m_EditorClassIdentifier: 
+  _clear: {fileID: 30178393670288238, guid: 6f4c481b33953b2cf92e19834a7ec230, type: 3}
+  _mountain: {fileID: 1881818933313486236, guid: 5c2574404ebcdc15ba7990e4cc631ef9, type: 3}
+  _smallCity: {fileID: 2585940676268217376, guid: 26cb19c4e4ddca8babb18627981a4b8a, type: 3}
+  _mediumCity: {fileID: 2585940676268217376, guid: 2d5f1a95a3bc57a1c9d061264b464363, type: 3}
+  _majorCity: {fileID: 2585940676268217376, guid: 18665b7bd681dc5e289a56eec1b111ed, type: 3}

@@ -1,0 +1,17 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 067e40db7b0d571b89a450239c4d6903, type: 3}
+  m_Name: TestingTemplate
+  m_EditorClassIdentifier: 
+  _trainName: Standard
+  _trainToken: {fileID: 4881937418234341360, guid: f4728bd598724e5268f82267b14a8f11, type: 3}
+  _railToken: {fileID: 6953948437602413023, guid: 9b85ee59081fdcbe39d7c7d44fe95f7a, type: 3}
