@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: aeac82e6f99cd499c80ab05d52bdeeb6, type: 3}
   m_Name: Map1
   m_EditorClassIdentifier: 
-  TokenTemplate: {fileID: 11400000, guid: 842ab5969c93ae3498bae2eba04fd15f, type: 2}
+  DefaultTokenTemplate: {fileID: 11400000, guid: 842ab5969c93ae3498bae2eba04fd15f, type: 2}
   Board: {fileID: 0}
   DefaultPlayerTemplate: {fileID: 11400000, guid: 86ac9f33bedaae8ac874fd709ec69c6d, type: 2}
   Nodes:

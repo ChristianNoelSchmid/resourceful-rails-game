@@ -1,12 +1,121 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine;
 
 namespace Rails
 {
     public static class Pathfinding
     {
-        private const int _maxPaths = 5;
+        private const int _maxPaths = 3;
+
+        #region Data Structures
+
+        /// <summary>
+        /// Represents information related to a path found by the
+        /// Pathfinder class.
+        /// </summary>
+        public class PathData
+        {
+            public int Distance { get; set; }
+            public int Cost { get; set; }
+            public List<NodeId> Nodes { get; set; }
+
+            public PathData(int distance, int cost, List<NodeId> nodes)
+            {
+                Distance = distance;
+                Cost = cost;
+                Nodes = nodes;
+            }
+
+        }
+
+        /// <summary>
+        /// A comparable object representing the position,
+        /// and weight to reach a node given a known start
+        /// position. Used in pathfinding
+        /// </summary>
+        class WeightedNode : IComparable<WeightedNode>
+        {
+            public NodeId Position { get; set; }
+            public int Weight { get; set; }
+            public bool[] AltTracksPaid { get; set; }
+
+            public int SpacesLeft { get; set; }
+            
+            // Compared by Weight
+            public int CompareTo(WeightedNode other) => Weight.CompareTo(other.Weight);
+        }
+
+        public class PriorityQueue<T> where T: IComparable<T>
+        {
+            private List<T> items;
+
+            public PriorityQueue() => items = new List<T>();
+
+            public T Peek() => items.FirstOrDefault();
+            public T Pop()
+            {
+                var item = items.FirstOrDefault();
+
+                if(items.Count > 0)
+                {
+                    items[0] = items.Last();
+
+                    int index = 0;
+                    int childIndex = 1;
+
+                    bool traversed = true;
+
+                    while(traversed)
+                    { 
+                        traversed = false;
+
+                        if(childIndex > items.Count - 1) 
+                            break;
+
+                        if(childIndex + 1 < items.Count && items[childIndex].CompareTo(items[childIndex + 1]) > 0)
+                            childIndex += 1;
+
+                        if(items[index].CompareTo(items[childIndex]) > 0)
+                        {
+                            T temp = items[index];
+                            items[index] = items[childIndex];
+                            items[childIndex] = temp;
+
+                            traversed = true;
+                        }
+
+                        index = childIndex;
+                        childIndex = 2 * childIndex + 1;
+                    } 
+
+                    items.RemoveAt(items.Count - 1);
+                }
+
+                return item;
+            }
+
+            public void Insert(T item)
+            {
+                int index = items.Count;
+                int parent = Mathf.FloorToInt((index - 1) / 2);
+
+                items.Add(item);
+
+                while(items[index].CompareTo(items[parent]) < 0)
+                {
+                    var temp = items[parent];
+                    items[parent] = items[index];
+                    items[index] = temp;
+
+                    index = parent;
+                    parent = Mathf.FloorToInt((index - 1) / 2);
+                }
+            }
+        }
+
+        #endregion
 
         #region Public Methods
 
@@ -21,10 +130,11 @@ namespace Rails
         /// <returns>The list of PathDatas representing the shortest tracks</returns>
         public static List<PathData> BestTracks(
             Dictionary<NodeId, int[]> tracks,
-            int player, NodeId start, NodeId end
+            int player, int speed, 
+            NodeId start, NodeId end
         ) {
             // First determine the least cost track (if it exists)
-            var leastCost = DjikstraLeastCostTrack(tracks, player, start, end);
+            var leastCost = DjikstraLeastCostTrack(tracks, player, speed, start, end, true);
             if(leastCost == null) return null;
 
             // A copy of the track map - nodes and edges are removed from
@@ -37,7 +147,10 @@ namespace Rails
             // A list of spur paths to be added to returned list
             var pathSpurs = new List<PathData>();
 
-            for(int k = 0; k < _maxPaths; ++k)
+            var removedNodes = new HashSet<NodeId>();
+            var removedEdges = new Dictionary<Tuple<NodeId, Cardinal>, int>();
+
+            for(int k = 1; k <= _maxPaths - 2; ++k)
             {
                 // Iterate through all nodes in the latest shortest path
                 // added to the returned list
@@ -48,37 +161,65 @@ namespace Rails
 
                     // Create a sub-track from the root of the start of the
                     // chosen path to spurNode 
-                    var rootPath = paths[k - 1].Nodes.GetRange(0, i + 1);
+                    var rootPath = paths[k-1].Nodes.GetRange(0, i + 1);
 
-                    // Remove all edges that exist from the path start to the spurNode.
-                    // This will ensure that a different path is chosen.
+                    // Remove the current edge to force the pathfinding algorithm
+                    // to find a different route.
                     foreach(var p in paths.Select(path => path.Nodes))
                     {
-                        if(p.GetRange(0, i + 1).SequenceEqual(rootPath))
+                        if(p.Count >= rootPath.Count && p.GetRange(0, i + 1).SequenceEqual(rootPath))
                         {
-                            spurTracks[p[i]][(int)Utilities.CardinalBetween(p[i], p[i+1])] = -1;
-                            spurTracks[p[i+1]][(int)Utilities.CardinalBetween(p[i+1], p[i])] = -1;
-                        }
-                        if(spurTracks[p[i]].All(p => p == -1))
-                            spurTracks.Remove(p[i]);
-                        if(spurTracks[p[i+1]].All(p => p == -1))
-                            spurTracks.Remove(p[i+1]);
+                            if(spurTracks.ContainsKey(p[i]))
+                            {
+                                Cardinal c = Utilities.CardinalBetween(p[i], p[i+1]);
+                                if(spurTracks[p[i]][(int)c] != -1)
+                                {
+                                    removedEdges.Add(Tuple.Create(p[i], c), spurTracks[p[i]][(int)c]);
+                                    spurTracks[p[i]][(int)c] = -1;
+
+                                    c = Utilities.CardinalBetween(p[i+1], p[i]);
+                                    removedEdges.Add(Tuple.Create(p[i+1], c), spurTracks[p[i+1]][(int)c]);
+                                    spurTracks[p[i+1]][(int)c] = -1;
+                                } 
+                            }
+                        }   
                     }
 
-                    rootPath.RemoveAll(p => p != spurNode);
+                    foreach(var node in rootPath.Where(p => p != spurNode))
+                    {
+                        for(int e = 0; e < (int)Cardinal.MAX_CARDINAL; ++e)
+                        {
+                            if(spurTracks[node][e] != -1)
+                                removedEdges.Add(Tuple.Create(node, (Cardinal)e), spurTracks[node][e]);
+                        }
+                        removedNodes.Add(node);
+                        spurTracks.Remove(node);
+                    }
 
                     // Calculate the shortest path from the spur node to the end node
-                    var spurPath = DjikstraLeastCostTrack(spurTracks, player, spurNode, end);
-                    // Combine the root path and spur path to create new path
-                    var totalPath = CreatePathData(tracks, rootPath, player);
-                    totalPath.Combine(spurPath);
+                    var spurPath = DjikstraLeastCostTrack(spurTracks, player, speed, spurNode, end, true);
 
-                    // If that path doesn't exist in pathSpurs, add it to the pathSpurs list
-                    // to be considered as the shortest path
-                    if(!pathSpurs.Any(p => p.Nodes.SequenceEqual(totalPath.Nodes)))
-                        pathSpurs.Add(totalPath);
-                    
-                    spurTracks = new Dictionary<NodeId, int[]>(tracks);
+                    PathData totalPath;
+                    if(spurPath != null)
+                    {
+                        totalPath = CreatePathData(tracks, player, speed, rootPath, spurPath.Nodes);
+
+                        // If that path doesn't exist in pathSpurs, add it to the pathSpurs list
+                        // to be considered as the shortest path
+                        if(!pathSpurs.Any(p => p.Nodes.SequenceEqual(totalPath.Nodes)))
+                            pathSpurs.Add(totalPath); 
+                    }
+                    foreach(var node in removedNodes)
+                    {
+                        spurTracks[node] = new int[(int)Cardinal.MAX_CARDINAL];
+                        for(int c = 0; c < (int)Cardinal.MAX_CARDINAL; ++c)
+                            spurTracks[node][c] = -1;
+                    }
+                    foreach(var edge in removedEdges.Keys)
+                        spurTracks[edge.Item1][(int)edge.Item2] = removedEdges[edge];
+
+                    removedNodes.Clear();
+                    removedEdges.Clear();
                 }
                 // If there aren't enough shortest paths to continue the
                 // loop, break and return what is present
@@ -94,9 +235,27 @@ namespace Rails
 
             // Finally, add the least distance path as an added consideration
             // (if it isn't already part of the list)
-            var leastDistance = LeastDistanceTrack(tracks, player, start, end);
-            if(!paths.Any(p => p.Nodes.SequenceEqual(leastDistance.Nodes)))
+            var leastDistance = LeastDistanceTrack(tracks, player, speed, start, end);
+            if(leastDistance != null && !paths.Any(p => p.Nodes.SequenceEqual(leastDistance.Nodes)))
                 paths.Insert(0, leastDistance);
+
+            // Remove tracks that offer no benefit compared to others
+            // (ie. distance and cost is greater than another's)
+            for(int i = 0; i < paths.Count; ++i)
+            {
+                for(int j = 0; j < paths.Count; ++j)
+                {
+                    if(i == j) continue;
+                    if(paths[i].Cost >= paths[j].Cost && paths[i].Distance >= paths[j].Distance)
+                    {
+                        paths.RemoveAt(i);
+                        if(i > 0) --i;
+                        if(j > 0) --j;
+                    }
+                }
+            }
+
+            paths.Sort((p1, p2) => p1.Distance.CompareTo(p2.Distance));
 
             return paths;
         }
@@ -117,22 +276,10 @@ namespace Rails
         // from a start point to end point.
         private static PathData LeastDistanceTrack(
             Dictionary<NodeId, int[]> tracks, 
-            int player, NodeId start, NodeId end
+            int player, int speed, 
+            NodeId start, NodeId end
         ) {
-            // This method uses the LeastCostTrack available, but first duplicates,
-            // and converts all tracks into the given player's tracks, to avoid
-            // adding other players' tracks' costs.
-            var normTracks = new Dictionary<NodeId, int[]>(tracks);
-            foreach(var node in tracks.Keys)
-            {
-                for(Cardinal c = Cardinal.N; c < Cardinal.MAX_CARDINAL; ++c)
-                {
-                    if(tracks[node][(int)c] != -1)
-                        tracks[node][(int)c] = player;
-                }
-            }
-
-            return DjikstraLeastCostTrack(normTracks, player, start, end);
+            return DjikstraLeastCostTrack(tracks, player, speed, start, end, false);
         }
 
         /// <summary>
@@ -146,12 +293,11 @@ namespace Rails
         /// <returns>The lowest cost track</returns>
         private static PathData DjikstraLeastCostTrack(
             Dictionary<NodeId, int[]> tracks, 
-            int player, NodeId start, NodeId end
+            int player, int speed, 
+            NodeId start, NodeId end,
+            bool addAltTrackCost
         ) {
-            if(start == end)
-                return new PathData (0, 0, new List<NodeId> { start });
-
-            if(!tracks.ContainsKey(start) || !tracks.ContainsKey(end))
+            if(start == end || !tracks.ContainsKey(start) || !tracks.ContainsKey(end))
                 return null;
 
             // The list of nodes to return from method
@@ -163,76 +309,78 @@ namespace Rails
             // shortest-path neighbors.
             var previous = new Dictionary<NodeId, NodeId>();
             // The next series of nodes to check, sorted by minimum weight
-            var queue = new SortedSet<WeightedNode>();
-            // All nodes that have been visited - ensures no node
-            // is checked twice.
-            var visitedNodes = new HashSet<NodeId>();
-            bool [] tracksPaid;
+            var queue = new PriorityQueue<WeightedNode>();
 
             // The current considered node
             WeightedNode node;
 
+            distMap.Add(start, 0);
+
+            var startNode = new WeightedNode 
+            {
+                Position = start,
+                Weight = 0,
+                SpacesLeft = speed + 1,
+                AltTracksPaid = new bool[6],
+            };
+            startNode.AltTracksPaid[player] = true;
             // To start things off, add the start node to the queue
-            queue.Add(new WeightedNode (start, 0));
+            queue.Insert(startNode);
 
             // While there are still nodes to visit,
             // Find the lowest-weight one and determine
             // it's connected nodes.
-            while((node = queue.Min) != null)
+            while((node = queue.Pop()) != null)
             { 
-                queue.Remove(node); 
-
-                tracksPaid = new bool [] { false, false, false, false, false, false };
-                tracksPaid[player] = true;
-
-                var currentNode = node.Position;
-
-                while(currentNode != start)
-                {
-                    int playerTrack = tracks[currentNode][(int)Utilities.CardinalBetween(currentNode, previous[currentNode])];
-                    tracksPaid[playerTrack] = true;
-
-                    currentNode = previous[currentNode];
-                }
-
-                // If the node's position is the target, or the current node
-                // has joined with an already discovered shortest path, a
-                // new best path has been found. Traverse the previous collection
-                // until start is reached, adding each node to list. Then
-                // reverse the list, and the shortest path is returned.
+                // If the node's position is the target, build the path and assign
+                // it to the returned PathData
                 if(node.Position == end)
                 {
-                    path = CreatePathData(tracks, previous, player, start, end);
+                    path = CreatePathData(tracks, previous, player, speed, start, end);
                     break;
+                }
+
+                if(addAltTrackCost && node.SpacesLeft == 0)
+                {
+                    node.SpacesLeft = speed;
+                    for(int i = 0; i < 6; ++i)
+                        node.AltTracksPaid[i] = false;
+                    node.AltTracksPaid[player] = true;
                 }
 
                 for(Cardinal c = Cardinal.N; c < Cardinal.MAX_CARDINAL; ++c)
                 {
                     var newPoint = Utilities.PointTowards(node.Position, c);
-                    if(tracks.ContainsKey(newPoint) && tracks[newPoint][(int)c] != -1)
+                    if(tracks[node.Position][(int)c] != -1 && tracks.ContainsKey(newPoint))
                     {
-                        var newCost = node.Weight + 1;
-                        int trackOwner = tracks[newPoint][(int)Utilities.CardinalBetween(newPoint, node.Position)];
+                        var newNode = new WeightedNode
+                        {
+                            Position = newPoint, 
+                            SpacesLeft = node.SpacesLeft - 1,
+                        };
+                        newNode.AltTracksPaid = node.AltTracksPaid.ToArray();
+
+                        var newCost = distMap[node.Position] + 1;
+                        int trackOwner = tracks[node.Position][(int)Utilities.CardinalBetween(node.Position, newPoint)];
 
                         // If the current track is owned by a different player,
                         // one whose track the current player currently is not on
                         // add the Alternative Track Cost to the track's weight.
-                        if(!tracksPaid[trackOwner])
-                            newCost += Manager.AltTrackCost;
+                        if(addAltTrackCost && !newNode.AltTracksPaid[trackOwner])
+                        {
+                            newCost += 1000;
+                            newNode.AltTracksPaid[trackOwner] = true;
+                        }
 
                         // If a shorter path has already been found, continue
-                        if(distMap.ContainsKey(newPoint) && distMap[newPoint] <= newCost)
+                        if(distMap.TryGetValue(newPoint, out int currentCost) && currentCost <= newCost)
                             continue;
 
                         distMap[newPoint] = newCost;
                         previous[newPoint] = node.Position;
 
-                        // If the node hasn't been visited yet, add it to the queue
-                        if(!visitedNodes.Contains(newPoint))
-                        {
-                            queue.Add(new WeightedNode(newPoint, node.Weight + 1));
-                            visitedNodes.Add(newPoint);
-                        }
+                        newNode.Weight = newCost + Mathf.RoundToInt(NodeId.Distance(newNode.Position, end));
+                        queue.Insert(newNode);
                     }
                 } 
             } 
@@ -245,22 +393,51 @@ namespace Rails
         /// </summary>
         private static PathData CreatePathData(
             Dictionary<NodeId, int[]> tracks,
-            List<NodeId> nodes, int player
+            int player, int speed,
+            params List<NodeId>[] paths
         ) {
-            int distance = nodes.Count;
+            int spacesLeft = speed + 1;
+            int distance = paths.Sum(n => n.Count);
             int cost = 0;
+            var nodes = new List<NodeId>();
 
             bool [] tracksPaid = new bool[6] { false, false, false, false, false, false };
-            tracksPaid[player] = true;
+            tracksPaid[player] = true; 
 
-            for(int i = 0; i < nodes.Count; ++i)
+            for(int p = 0; p < paths.Length; ++p)
             {
-                cost += 1;
-                Cardinal c = Utilities.CardinalBetween(nodes[i], nodes[i + 1]);
-                if(!tracksPaid[tracks[nodes[i]][(int)c]])
+                for(int i = 0; i < paths[p].Count; ++i)
                 {
-                    cost += Manager.AltTrackCost;
-                    tracksPaid[tracks[nodes[i]][(int)c]] = true;
+                    nodes.Add(paths[p][i]); 
+
+                    NodeId node1; NodeId ? node2 = null;
+                    node1 = paths[p][i];
+
+                    if(i < paths[p].Count - 1)
+                        node2 = paths[p][i+1];
+                    else if(p < paths.Length - 1)
+                        node2 = paths[p+1][0];
+
+                    if(node2.HasValue)
+                    {
+                        Cardinal c = Utilities.CardinalBetween(node1, node2.Value);
+                        if(!tracksPaid[tracks[node1][(int)c]])
+                        {
+                            cost += Manager.AltTrackCost;
+                            tracksPaid[tracks[node1][(int)c]] = true;
+                        }
+                    }
+
+                    spacesLeft -= 1;
+
+                    if(spacesLeft == 0)
+                    {
+                        spacesLeft = speed;
+                        for(int t = 0; t < 6; ++t)
+                            tracksPaid[t] = false;
+
+                        tracksPaid[player] = true;
+                    }
                 }
             }
 
@@ -275,30 +452,43 @@ namespace Rails
         private static PathData CreatePathData (
             Dictionary<NodeId, int[]> tracks,
             Dictionary<NodeId, NodeId> previous,
-            int player, NodeId start, NodeId end
+            int player, int speed, NodeId start, NodeId end
          ) {
+            int spacesLeft = speed + 1;
             var cost = 0;
             var distance = 0;
-            var currentTrack = player;
+            bool [] tracksPaid = new bool[6] { false, false, false, false, false, false };
+            tracksPaid[player] = true;
 
             var nodes = new List<NodeId>();
             var current = end;
 
-            while(current != start)
+            do
             {
                 nodes.Add(current);
-                cost += 1;
                 distance += 1;
 
                 Cardinal c = Utilities.CardinalBetween(current, previous[current]);
-                if(tracks[current][(int)c] != currentTrack)
+                if(!tracksPaid[tracks[current][(int)c]])
                 {
                     cost += Manager.AltTrackCost;
-                    currentTrack = tracks[current][(int)c];
+                    tracksPaid[tracks[current][(int)c]] = true;
                 }
 
                 current = previous[current];
-            }
+
+                spacesLeft -= 1;
+
+                if(spacesLeft == 0)
+                {
+                    spacesLeft = speed;
+                    for(int t = 0; t < 6; ++t)
+                        tracksPaid[t] = false;
+
+                    tracksPaid[player] = true;
+                }
+            } 
+            while(current != start);
 
             nodes.Reverse();
             return new PathData(distance, cost, nodes);
@@ -306,47 +496,4 @@ namespace Rails
  
         #endregion
     }    
-
-    /// <summary>
-    /// Represents information related to a path found by the
-    /// Pathfinder class.
-    /// </summary>
-    public class PathData
-    {
-        public int Distance { get; set; }
-        public int Cost { get; set; }
-        public List<NodeId> Nodes { get; set; }
-
-        public PathData(int distance, int cost, List<NodeId> nodes)
-        {
-            Distance = distance;
-            Cost = cost;
-            Nodes = nodes;
-        }
-
-        public void Combine(PathData data)
-        {
-            Nodes.AddRange(data.Nodes);
-            Cost += data.Cost;
-            Distance += data.Distance;
-        }
-    }
-
-    /// <summary>
-    /// A comparable object representing the position,
-    /// and weight to reach a node given a known start
-    /// position. Used in pathfinding
-    /// </summary>
-    class WeightedNode : IComparable<WeightedNode>
-    {
-        public NodeId Position { get; set; }
-        public int Weight { get; set; }
-        public WeightedNode(NodeId position, int weight)
-        {
-            Position = position;
-            Weight = weight;
-        }
-        // Compared by Weight
-        public int CompareTo(WeightedNode other) => Weight.CompareTo(other.Weight);
-    }
 }

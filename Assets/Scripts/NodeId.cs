@@ -39,6 +39,8 @@ namespace Rails
             }
         }
 
+        public override string ToString() => $"{{{X}, {Y}}}";
+
         public static bool operator ==(NodeId n1, NodeId n2) => n1.Equals(n2);
         public static bool operator !=(NodeId n1, NodeId n2) => !n1.Equals(n2); 
 

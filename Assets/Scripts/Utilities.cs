@@ -54,7 +54,7 @@ namespace Rails
         /// <returns>The Cardinal represented from n1 to n2.</returns>
         public static Cardinal CardinalBetween(NodeId node1, NodeId node2)
         {
-            var exception = new ArgumentException("Cannot find Cardinal between two non-adjacent NodeIds");
+            var exception = new ArgumentException($"Cannot find Cardinal between two non-adjacent NodeIds: {node1} and {node2}");
 
             // Find the direction the NodeIds are moving
             var dir = node2 - node1;
