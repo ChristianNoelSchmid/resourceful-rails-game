@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
+using static Rails.Pathfinding;
 
 namespace Rails
 {
@@ -37,6 +38,8 @@ namespace Rails
             }
         }
 
+        private static int _player = 1;
+
         #endregion
 
         #region Properties
@@ -57,6 +60,7 @@ namespace Rails
         /// </summary>
         [SerializeField]
         private Dictionary<NodeId, int[]> Tracks = new Dictionary<NodeId, int[]>();
+        private List<GameObject> Routes = new List<GameObject>();
 
         [SerializeField]
         private Text _text;
@@ -78,19 +82,8 @@ namespace Rails
         {
             // set singleton reference on awake
             _singleton = this;
-            for(int x = 0; x < Size; ++x)
-            {
-                for(int y = 0; y < Size; ++y)
-                {
-                    var nodeId = new NodeId(x, y);
-                    var marker = Instantiate(Map.DefaultTokenTemplate.Clear, GetPosition(nodeId), Quaternion.identity);
-                    NodeMarkers.Add(nodeId, marker.GetComponent<NodeMarker>());
-
-                    NodeMarkers[nodeId].PrimaryColor = Color.black;
-                    NodeMarkers[nodeId].SetColor(Color.black);
-                }
-            }
             InsertRandomTracks();
+            InsertRandomTerrain();
         }
 
         private void Update()
@@ -122,44 +115,57 @@ namespace Rails
                     _targetedNode.SetColor(Color.green);
                     _targetedId = GetNodeId(point);
                 }
-                if(Input.GetMouseButtonDown(1) && _targetedNode != null && _selectedNode != null && _targetedNode != _selectedNode)
+                List<Route> routes = null;
+
+                if(_targetedNode != null && _selectedNode != null && _targetedNode != _selectedNode)
                 {                        
-                    var tracks = Pathfinding.BestTracks(Tracks, 1, 5, _selectedId, _targetedId);
+                    if(Input.GetMouseButtonDown(2))
+                        routes = Pathfinding.BestTracks(Tracks, Map, _player, 5, _selectedId, _targetedId, false);
+                    else if(Input.GetMouseButtonDown(1))
+                        routes = Pathfinding.BestTracks(Tracks, Map, _player, 5, _selectedId, _targetedId, true);
+                }
 
-                    if(tracks != null && tracks.Count != 0)
+                if(routes != null && routes.Count != 0)
+                {
+                    foreach(var n in TrackMarkers.Keys)
                     {
-                        foreach(var n in TrackMarkers.Keys)
+                        for(int i = 0; i < TrackMarkers[n].Length; ++i)
                         {
-                            for(int i = 0; i < TrackMarkers[n].Length; ++i)
-                            {
-                                if(TrackMarkers[n][i] != null)
-                                    TrackMarkers[n][i].ResetColor();
-                            }
+                            if(TrackMarkers[n][i] != null)
+                                TrackMarkers[n][i].ResetColor();
                         }
-                        _text.text = "";
-                        for(int t = tracks.Count - 1; t >= 0; --t)
-                        { 
-                            for(int i = 0; i < tracks[t].Nodes.Count - 1; ++i)
-                            {
-                                Cardinal c = Utilities.CardinalBetween(tracks[t].Nodes[i], tracks[t].Nodes[i+1]);
-
-                                TrackMarkers[tracks[t].Nodes[i]][(int)c].SetColor(t switch
-                                {
-                                    0 => Color.white,
-                                    1 => Color.magenta,
-                                    2 => new Color(0.0f, 1.0f, 1.0f),
-                                    _ => new Color(0.5f, 0.5f, 0.5f),
-                                });
-                            }
-                            _text.text += $"Track {t + 1}: Dist {tracks[t].Distance} : Cost {tracks[t].Cost}\n";
-                        }
-                        _text.text = _text.text.Substring(0, _text.text.Length - 1);
                     }
-                } 
+                    for(int i = Routes.Count - 1; i >= 0; --i)
+                        Destroy(Routes[i]);
+                    Routes.Clear();
+
+                    _text.text = "";
+                    for(int t = routes.Count - 1; t >= 0; --t)
+                    { 
+                        for(int i = 0; i < routes[t].Nodes.Count - 1; ++i)
+                        {
+                            var trackObject = Instantiate(
+                                Map.DefaultPlayerTemplate.RailToken, 
+                                GetPosition(routes[t].Nodes[i]), 
+                                Quaternion.Euler(0, GetRotation(Utilities.CardinalBetween(routes[t].Nodes[i], routes[t].Nodes[i+1])), 0)
+                            );
+                            var node = trackObject.GetComponent<NodeMarker>();
+                            var color = t switch {
+                                2 => Color.blue,
+                                1 => Color.green,
+                                0 => Color.white,
+                                _ => Color.red,
+                            };
+                            node.SetColor(color);
+                            node.PrimaryColor = color;
+                            Routes.Add(trackObject);
+                            trackObject.GetComponentInChildren<Renderer>().sortingOrder = 100;
+                        }
+                        _text.text = $"Route {t + 1}: Dist {routes[t].Distance} : Cost {routes[t].Cost}\n" + _text.text;
+                    }
+                    _text.text = _text.text.Substring(0, _text.text.Length - 1);
+                }
             }
-            if(_selectedId != GetNodeId(point)) 
-                Debug.Log(GetNodeId(point));
-            Debug.Log(GetNodeId(point));
         }
 
         private void OnDrawGizmos()
@@ -263,7 +269,7 @@ namespace Rails
                         c = Random.Range(0, (int)Cardinal.MAX_CARDINAL);
                     } while(Tracks.ContainsKey(current) && Tracks[current][c] != -1);
 
-                    for(int i = 0; i < 50; ++i)
+                    for(int i = 0; i < 30; ++i)
                     {
                         InsertTrack(p, current, (Cardinal)c);
                         var track = Instantiate(Map.DefaultPlayerTemplate.RailToken, GetPosition(current) + new Vector3(0, 1.0f, 0), Quaternion.Euler(0.0f, GetRotation((Cardinal)c), 0.0f)).GetComponent<NodeMarker>();
@@ -291,7 +297,7 @@ namespace Rails
                         else if(Tracks.ContainsKey(current))
                         {
                             do {
-                                int val = Random.Range(0, (int)Cardinal.MAX_CARDINAL + 5);
+                                int val = Random.Range(0, (int)Cardinal.MAX_CARDINAL + 6);
                                 if(val >= (int)Cardinal.MAX_CARDINAL) val = c; 
                                 c = val;
                             } while(Tracks[current][c] != -1);
@@ -301,5 +307,41 @@ namespace Rails
                 }
             }
         } 
+
+        private void InsertRandomTerrain()
+        {
+            float seed = Random.Range(0.0f, 1000.0f);
+            for(int x = 0; x < Size; ++x)
+            {
+                for(int y = 0; y < Size; ++y)
+                {
+                    NodeType index;
+                    float noiseIndex = Mathf.PerlinNoise((seed + x) * 0.1f, (seed + y) * 0.1f);
+                    if(noiseIndex > 0.5f) index = NodeType.Mountain;
+                    else index = NodeType.Clear;
+
+                    Map.Nodes[Size * x + y].Type = index;
+                    var node = Instantiate(
+                        Map.DefaultTokenTemplate.TokenOfType(index), 
+                        GetPosition(new NodeId(x, y)),
+                        Quaternion.identity
+                    ).GetComponent<NodeMarker>();
+
+                    NodeMarkers[new NodeId(x, y)] = node;
+                    if(index == 0) 
+                    {
+                        node.SetColor(Color.black);
+                        node.PrimaryColor = Color.black;
+                    }
+                    else
+                    {
+                        node.SetColor(new Color(1.0f, 1.0f, 0.0f));
+                        node.PrimaryColor = new Color(1.0f, 1.0f, 0.0f);
+                    }
+                }
+            }
+        }
+
+        public void SetPlayer(int player) => _player = player + 1;
     }
 }

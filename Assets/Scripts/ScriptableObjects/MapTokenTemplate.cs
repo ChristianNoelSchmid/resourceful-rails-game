@@ -21,5 +21,15 @@ namespace Rails.ScriptableObjects
 
         [SerializeField] private GameObject _majorCity;
         public GameObject MajorCity => _majorCity;
+
+        public GameObject TokenOfType(NodeType type) => type switch
+        {
+            NodeType.Clear => _clear,
+            NodeType.MajorCity => _majorCity,
+            NodeType.MediumCity => _mediumCity,
+            NodeType.Mountain => _mountain,
+            NodeType.SmallCity => _smallCity,
+            _ => null,
+        };
     }
 }
