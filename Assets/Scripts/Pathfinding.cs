@@ -41,44 +41,70 @@ namespace Rails
     {
         public NodeId Position { get; set; }
         public int Weight { get; set; }
+        
+        // A running tally of what tracks have been paid for at
+        // the current position
         public bool[] AltTracksPaid { get; set; }
-
+        
+        // How many spaces the player has left at this WeightedNode, from
+        // start.
         public int SpacesLeft { get; set; }
         
         // Compared by Weight
         public int CompareTo(WeightedNode other) => Weight.CompareTo(other.Weight);
     }
-
+    
+    /// <summary>
+    /// A collection of ordered items. Allows insertion, peeking
+    /// and popping the minimum weight item off the queue.
+    /// </summary>
+    /// <typeparam name="T">An IComparable type</typeparam>
     public class PriorityQueue<T> where T: IComparable<T>
     {
         private List<T> items;
-
         public PriorityQueue() => items = new List<T>();
-
+        
+        /// <summary>
+        /// Get the minimum weight item on the queue.
+        /// </summary>
+        /// <returns>The minimum weight item, or type default if the queue is empty.</returns>
         public T Peek() => items.FirstOrDefault();
+
+        /// <summary>
+        /// Removes the minimum weight item off the queue, and returns it.
+        /// </summary>
+        /// <returns>The minimum weight item, or type default if the queue is empty.</returns>
         public T Pop()
         {
             var item = items.FirstOrDefault();
 
             if(items.Count > 0)
             {
+                // Move the max-weight item to the top of the queue
                 items[0] = items.Last();
 
                 int index = 0;
                 int childIndex = 1;
 
                 bool traversed = true;
-
+                
+                // While the max-weight item is not balanced, continue swapping
+                // its position with its children
                 while(traversed)
                 { 
                     traversed = false;
-
+                    
+                    // If the max-weight node is in an appropriate position
+                    // end the loop
                     if(childIndex > items.Count - 1) 
                         break;
-
+                    
+                    // Select the min-weight child to compare with the parent
                     if(childIndex + 1 < items.Count && items[childIndex].CompareTo(items[childIndex + 1]) > 0)
                         childIndex += 1;
-
+                    
+                    // If the max-weight (parent) element is larger than the child element
+                    // swap the elements and run the loop again.
                     if(items[index].CompareTo(items[childIndex]) > 0)
                     {
                         T temp = items[index];
@@ -97,14 +123,24 @@ namespace Rails
 
             return item;
         }
-
+        
+        /// <summary>
+        /// Adds a new item to the queue.
+        /// </summary>
+        /// <param name="item">The new item to insert into the queue.</param>
         public void Insert(T item)
         {
+            // The new element's index
             int index = items.Count;
+
+            // The parent of the maximum element in the queue
             int parent = Mathf.FloorToInt((index - 1) / 2);
 
             items.Add(item);
-
+            
+            // While the element is smaller than its parent, swap
+            // the element with it's parents and compare with its
+            // new parent
             while(items[index].CompareTo(items[parent]) < 0)
             {
                 var temp = items[parent];
@@ -125,31 +161,41 @@ namespace Rails
         /// <summary>
         /// Finds the least-distance build route given a series of
         /// intermediate segment nodes.
-        /// 
-        /// Returns the furthest path between segments possible
-        /// if a segment cannot be reached.
         /// </summary>
-        /// <param name="tracks">The maps current rail tracks</param>
-        /// <param name="mapData">The map's data</param>
-        /// <param name="segments">The segments the route must pass through</param>
-        /// <returns></returns>
+        /// <param name="tracks">The map's current player tracks</param>
+        /// <param name="mapData">The map's node information</param>
+        /// <param name="segments">The NodeIds the route must pass through</param>'
+        /// <returns>
+        /// The shortest-distance Route that connects all segments.
+        /// Returns the furthest path between segments possible
+        /// if a segment cannot be reached. 
+        /// </returns>
         public static Route ShortestBuild(
             Dictionary<NodeId, int[]> tracks, MapData mapData,
             params NodeId[] segments
         ) {
             var path = new List<NodeId>();
+
+            // If no segments were given, return an empty Route
+            if (segments.Length == 0) 
+                return new Route(0, path);
+
             path.Add(segments[0]);
 
+            // A duplicate of the current tracks - ensures that Pathfinder
+            // doesn't reuse already commited paths in later traversals.
             var newTracks = new Dictionary<NodeId, int[]>(tracks);
-
+            
+            // For each segment, find the least-distance path between it and the next segment.
             for(int i = 0; i < segments.Length - 1; ++i)
             {
                 var route = LeastCostPath(
                     newTracks, mapData, segments[i], 
-                    segments[i + 1], null, false
+                    segments[i + 1], false
                 );
                 if(route == null) break;
-
+                
+                // Add the new path to newTracks
                 for(int j = 0; j < route.Nodes.Count - 1; ++j)
                 {
                     if(!newTracks.ContainsKey(route.Nodes[j]))
@@ -160,42 +206,51 @@ namespace Rails
                     newTracks[route.Nodes[j]][(int)Utilities.CardinalBetween(route.Nodes[j], route.Nodes[j + 1])] = 0;
                     newTracks[route.Nodes[j+1]][(int)Utilities.CardinalBetween(route.Nodes[j+1], route.Nodes[j])] = 0;
                 }
-
+         
                 path.AddRange(route.Nodes);
             }
-
+            
             return CreatePathRoute(mapData, path);
         }
 
         /// <summary>
         /// Finds the least-cost build route given a series of
         /// intermediate segment nodes.
-        /// 
-        /// Returns the furthest path between segments possible
-        /// if a segment cannot be reached.
         /// </summary>
-        /// <param name="tracks">The maps current rail tracks</param>
-        /// <param name="mapData">The map's data</param>
-        /// <param name="segments">The segments the route must pass through</param>
-        /// <returns></returns>
-
+        /// <param name="tracks">The map's current player tracks</param>
+        /// <param name="mapData">The map's node information</param>
+        /// <param name="segments">The NodeIds the route must pass through</param>
+        /// <returns>
+        /// The shortest-cost Route that connects all segments.
+        /// Returns the furthest path between segments possible
+        /// if a segment cannot be reached. 
+        /// </returns>
         public static Route CheapestBuild(
             Dictionary<NodeId, int[]> tracks, MapData mapData,
             params NodeId[] segments
         ) {
             var path = new List<NodeId>();
+            
+            // If no segments were given, return an empty Route
+            if (segments.Length == 0) 
+                return new Route(0, path);
+
             path.Add(segments[0]);
 
+            // A duplicate of the current tracks - ensures that Pathfinder
+            // doesn't reuse already commited paths in later traversals.
             var newTracks = new Dictionary<NodeId, int[]>(tracks);
 
+            // For each segment, find the least-cost path between it and the next segment.
             for(int i = 0; i < segments.Length - 1; ++i)
             {
                 var route = LeastCostPath(
                     newTracks, mapData, segments[i], 
-                    segments[i + 1], null, true
+                    segments[i + 1], true
                 );
                 if(route == null) break;
                 
+                // Add the new path to newTracks
                 for(int j = 0; j < route.Nodes.Count - 1; ++j)
                 {
                     if(!newTracks.ContainsKey(route.Nodes[j]))
@@ -214,25 +269,32 @@ namespace Rails
         }
 
         /// <summary>
-        /// Finds the least-distance traversal on a rail track,
+        /// Finds the least-distance traversal on a track,
         /// given a `player`, the player's train's `speed`, and
         /// a series of intermediate segments.
-        /// 
-        /// Returns the furthest path between segments possible
-        /// if a segment cannot be reached.
         /// </summary>
-        /// <param name="tracks">The current rail tracks on the map</param>
-        /// <param name="player">The player performing the traversal</param>
+        /// <param name="tracks">The map's current player tracks</param>
+        /// <param name="player">The index of the player performing the traversal</param>
         /// <param name="speed">The speed of the player's train</param>
-        /// <param name="segments">The segments the route must pass through</param>
-        /// <returns></returns>
+        /// <param name="segments">The NodeIds the route must pass through</param>
+        /// <returns>
+        /// The shortest-distance Route that connects all segments.
+        /// Returns the furthest path between segments possible
+        /// if a segment cannot be reached. 
+        /// </returns>
         public static Route ShortestMove(
             Dictionary<NodeId, int[]> tracks,
             int player, int speed, params NodeId [] segments
         ) {
             var path = new List<NodeId>();
-            path.Add(segments[0]);
 
+            // If no segments were given, return an empty Route
+            if (segments.Length == 0) 
+                return new Route(0, path);
+
+            path.Add(segments[0]);
+    
+            // For each segment, find the least-distance path between it and the next segment.
             for(int i = 0; i < segments.Length - 1; ++i)
             {
                 var route = LeastCostTrack(
@@ -240,6 +302,8 @@ namespace Rails
                     segments[i], segments[i + 1], false
                 );
                 if(route == null) break;
+
+                // Add the new path to newTracks
                 path.AddRange(route.Nodes);
             }
 
@@ -247,26 +311,32 @@ namespace Rails
         }
 
         /// <summary>
-        /// Finds the least-cost traversal on a rail track,
+        /// Finds the least-cost traversal on a track,
         /// given a `player`, the player's train's `speed`, and
         /// a series of intermediate segments.
-        /// 
-        /// Returns the furthest path between segments possible
-        /// if a segment cannot be reached.
         /// </summary>
-        /// <param name="tracks">The current rail tracks on the map</param>
-        /// <param name="player">The player performing the traversal</param>
+        /// <param name="tracks">The map's current player tracks</param>
+        /// <param name="player">The index of the player performing the traversal</param>
         /// <param name="speed">The speed of the player's train</param>
-        /// <param name="segments">The segments the route must pass through</param>
-        /// <returns></returns>
-
+        /// <param name="segments">The NodeIds the route must pass through</param>
+        /// <returns>
+        /// The shortest-distance Route that connects all segments.
+        /// Returns the furthest path between segments possible
+        /// if a segment cannot be reached. 
+        /// </returns>
         public static Route CheapestMove(
             Dictionary<NodeId, int[]> tracks,
             int player, int speed, params NodeId [] segments
         ) {
             var path = new List<NodeId>();
+            
+            // If no segments were given, return an empty Route
+            if (segments.Length == 0) 
+                return new Route(0, path);
+
             path.Add(segments[0]);
 
+            // For each segment, find the least-cost path between it and the next segment.
             for(int i = 0; i < segments.Length - 1; ++i)
             {
                 var route = LeastCostTrack(
@@ -274,6 +344,8 @@ namespace Rails
                     segments[i], segments[i + 1], true
                 );
                 if(route == null) break;
+                
+                // Add the new path to newTracks
                 path.AddRange(route.Nodes);
             }
 
@@ -288,11 +360,6 @@ namespace Rails
         /// Finds the lowest cost track available for the given player,
         /// from a start point to end point.
         /// </summary>
-        /// <param name="tracks">The track nodes being traversed on</param>
-        /// <param name="player">The player enacting the traversal</param>
-        /// <param name="start">The start point of the traversal</param>
-        /// <param name="end">The target point of the traversal</param>
-        /// <returns>The lowest cost track</returns>
         private static Route LeastCostTrack(
             Dictionary<NodeId, int[]> tracks, 
             int player, int speed, 
@@ -326,6 +393,7 @@ namespace Rails
                 AltTracksPaid = new bool[6],
             };
             startNode.AltTracksPaid[player] = true;
+
             // To start things off, add the start node to the queue
             queue.Insert(startNode);
 
@@ -341,7 +409,10 @@ namespace Rails
                     path = CreateTrackRoute(tracks, previous, player, speed, start, end);
                     break;
                 }
-
+                
+                // If other players' track costs are being considered,
+                // and the player has run out of spaces on this turn, reset
+                // all AltTracksPaid elements to false (except the traversing player). 
                 if(addAltTrackCost && node.SpacesLeft == 0)
                 {
                     node.SpacesLeft = speed;
@@ -349,7 +420,9 @@ namespace Rails
                         node.AltTracksPaid[i] = false;
                     node.AltTracksPaid[player] = true;
                 }
-
+                
+                // With the current NodeId, cycle through all Cardinal directions,
+                // determining cost to traverse that direction.
                 for(Cardinal c = Cardinal.N; c < Cardinal.MAX_CARDINAL; ++c)
                 {
                     var newPoint = Utilities.PointTowards(node.Position, c);
@@ -363,6 +436,8 @@ namespace Rails
                         newNode.AltTracksPaid = node.AltTracksPaid.ToArray();
 
                         var newCost = distMap[node.Position] + 1;
+
+                        // Retrieve the track owner of the edge being considered
                         int trackOwner = tracks[node.Position][(int)Utilities.CardinalBetween(node.Position, newPoint)];
 
                         // If the current track is owned by a different player,
@@ -377,10 +452,14 @@ namespace Rails
                         // If a shorter path has already been found, continue
                         if(distMap.TryGetValue(newPoint, out int currentCost) && currentCost <= newCost)
                             continue;
-
+                        
+                        // Add the true new cost to distMap
                         distMap[newPoint] = newCost;
+                        // Establish the previous node for the new node, to connect
+                        // the path upon completion
                         previous[newPoint] = node.Position;
-
+                        
+                        // Add the new cost, with the A* heuristic, to the node's weight
                         newNode.Weight = newCost + Mathf.RoundToInt(NodeId.Distance(newNode.Position, end));
                         queue.Insert(newNode);
                     }
@@ -388,20 +467,13 @@ namespace Rails
             } 
             return path;
         }
-
+           
         /// <summary>
-        /// Finds the lowest cost path available from one point to another,
-        /// if it exists
+        /// Finds the lowest cost path available from a start point to end point.
         /// </summary>
-        /// <param name="tracks">The track nodes being traversed on</param>
-        /// <param name="map">The map being used in the algorithm</param>
-        /// <param name="start">The start point of the traversal</param>
-        /// <param name="end">The target point of the traversal</param>
-        /// <returns>The lowest cost track</returns>
         private static Route LeastCostPath(
             Dictionary<NodeId, int[]> tracks, 
-            MapData map, NodeId start, NodeId end,
-            IEnumerable<Tuple<NodeId, Cardinal>> removedEdges,
+            MapData map, NodeId start, NodeId end,            
             bool addWeight
         ) {
             if(start == end)
@@ -444,15 +516,17 @@ namespace Rails
                     break;
                 }
 
+                // With the current NodeId, cycle through all Cardinal directions,
+                // determining cost to traverse that direction.
                 for(Cardinal c = Cardinal.N; c < Cardinal.MAX_CARDINAL; ++c)
                 {
-                    if(tracks.ContainsKey(node.Position) && tracks[node.Position][(int)c] != -1)
-                        continue;
-
                     var newPoint = Utilities.PointTowards(node.Position, c);
 
-                    if(removedEdges?.Contains(Tuple.Create(node.Position, c)) ?? false)
-                        continue;
+                    // If there is a track already at the considered edge, continue
+                    if(tracks.ContainsKey(node.Position) && tracks[node.Position][(int)c] != -1)
+                        continue;                    
+
+                    // If the point is outside the map bounds, continue
                     if(newPoint.X < 0 || newPoint.Y < 0 || newPoint.X >= Manager.Size || newPoint.Y >= Manager.Size)
                         continue;
 
@@ -462,23 +536,80 @@ namespace Rails
                     if(map.Nodes[newNode.Position.X * Manager.Size + newNode.Position.Y].Type == NodeType.Mountain && addWeight)
                         newCost += 1;
 
-
                     // If a shorter path has already been found, continue
                     if(distMap.TryGetValue(newPoint, out int currentCost) && currentCost <= newCost)
                         continue;
 
+                    // Add the true new cost to distMap
                     distMap[newPoint] = newCost;
+                    // Establish the previous node for the new node, to connect
+                    // the path upon completion
                     previous[newPoint] = node.Position;
 
+                    // Add the new cost, with the A* heuristic, to the node's weight
                     newNode.Weight = newCost + Mathf.RoundToInt(NodeId.Distance(newNode.Position, end));
                     queue.Insert(newNode);
                 } 
             } 
             return path;
         }
+        
+        /// <summary>
+        /// Creates a new Route using the given tracks,
+        /// a map of all tracks' nodes previous nodes for shortest
+        /// path.
+        /// </summary>
+        private static Route CreateTrackRoute (
+            Dictionary<NodeId, int[]> tracks,
+            Dictionary<NodeId, NodeId> previous,
+            int player, int speed, NodeId start, NodeId end
+         ) {
+            int spacesLeft = speed + 1;
+            var cost = 0;
+            bool [] tracksPaid = new bool[6] { false, false, false, false, false, false };
+            tracksPaid[player] = true;
+
+            var nodes = new List<NodeId>();
+            var current = end;
+
+            // While the start node has not been reached, traverse
+            // down the previous map.
+            do
+            {
+                nodes.Add(current);
+                Cardinal c = Utilities.CardinalBetween(current, previous[current]);
+
+                // If the track has yet to be paid for this turn
+                // add the cost.
+                if(!tracksPaid[tracks[current][(int)c]])
+                {
+                    cost += Manager.AltTrackCost;
+                    tracksPaid[tracks[current][(int)c]] = true;
+                }
+
+                current = previous[current];
+
+                spacesLeft -= 1;
+
+                // If the player has run out of spaces this turn,
+                // reset tracksPaid
+                if(spacesLeft == 0)
+                {
+                    spacesLeft = speed;
+                    for(int t = 0; t < 6; ++t)
+                        tracksPaid[t] = false;
+
+                    tracksPaid[player] = true;
+                }
+            } 
+            while(current != start);
+            
+            nodes.Reverse();
+            return new Route(cost, nodes);
+        }
 
         /// <summary>
-        /// Creates a new PathData using the given
+        /// Creates a new Route using the given
         /// tracks, nodes from start to end and player index
         /// </summary>
         private static Route CreateTrackRoute(
@@ -491,18 +622,24 @@ namespace Rails
 
             bool [] tracksPaid = new bool[6] { false, false, false, false, false, false };
             tracksPaid[player] = true; 
-
+            
+            // Traverse the path, adding the cost of each edge while doing so
             for(int i = 0; i < path.Count - 1; ++i)
             {
                 Cardinal c = Utilities.CardinalBetween(path[i], path[i+1]);
+
+                // If the track has yet to be paid for this turn
+                // add the cost.
                 if(!tracksPaid[tracks[path[i]][(int)c]])
                 {
                     cost += Manager.AltTrackCost;
                     tracksPaid[tracks[path[i]][(int)c]] = true;
                 }
-
+            
                 spacesLeft -= 1;
-
+                
+                // If the player has run out of spaces this turn,
+                // reset tracksPaid
                 if(spacesLeft == 0)
                 {
                     spacesLeft = speed;
@@ -518,53 +655,9 @@ namespace Rails
         }
 
         /// <summary>
-        /// Creates a new PathData using the given tracks,
-        /// a map of all tracks' nodes previous nodes for shortest
-        /// path, player index and start / end points.
+        /// Creates a new Route using the MapData and a map of all tracks' 
+        /// nodes previous nodes for shortest path.
         /// </summary>
-        private static Route CreateTrackRoute (
-            Dictionary<NodeId, int[]> tracks,
-            Dictionary<NodeId, NodeId> previous,
-            int player, int speed, NodeId start, NodeId end
-         ) {
-            int spacesLeft = speed + 1;
-            var cost = 0;
-            bool [] tracksPaid = new bool[6] { false, false, false, false, false, false };
-            tracksPaid[player] = true;
-
-            var nodes = new List<NodeId>();
-            var current = end;
-
-            do
-            {
-                nodes.Add(current);
-
-                Cardinal c = Utilities.CardinalBetween(current, previous[current]);
-                if(!tracksPaid[tracks[current][(int)c]])
-                {
-                    cost += Manager.AltTrackCost;
-                    tracksPaid[tracks[current][(int)c]] = true;
-                }
-
-                current = previous[current];
-
-                spacesLeft -= 1;
-
-                if(spacesLeft == 0)
-                {
-                    spacesLeft = speed;
-                    for(int t = 0; t < 6; ++t)
-                        tracksPaid[t] = false;
-
-                    tracksPaid[player] = true;
-                }
-            } 
-            while(current != start);
-
-            nodes.Reverse();
-            return new Route(cost, nodes);
-        }
-
         private static Route CreatePathRoute(
             MapData map,
             Dictionary<NodeId, NodeId> previous,
@@ -574,12 +667,16 @@ namespace Rails
             var nodes = new List<NodeId>();
             var current = end;
 
+            // While the start node has not been reached, traverse
+            // down the previous map.
             do
             {
                 nodes.Add(current);
 
                 current = previous[current];
-
+                
+                // Add the cost of building the track, based on NodeType
+                // and NodeSegment
                 if(current != start)
                     cost += map.Nodes[current.X * Manager.Size + current.Y].Type == NodeType.Clear ?
                         1 : 2;
@@ -589,18 +686,25 @@ namespace Rails
             nodes.Reverse();
             return new Route(cost, nodes);
         }
-
+        
+        /// <summary>
+        /// Creates a new Route using the MapData and a list of NodeIds
+        /// </summary>
         private static Route CreatePathRoute(
             MapData map,
             List<NodeId> path
         ) {
             int cost = 0;
 
-            for(int i = 0; i < path.Count; ++i)
+            // Traverse the path, adding the cost of each edge while doing so
+            for(int i = 0; i < path.Count; ++i)  
+                // Add the cost of building the track, based on NodeType
+                // and NodeSegment
                 cost += map.Nodes[path[i].X * Manager.Size + path[i].Y].Type == NodeType.Clear ? 1 : 2;
  
             return new Route(cost, path);
         }
+        
         #endregion
     }    
 }

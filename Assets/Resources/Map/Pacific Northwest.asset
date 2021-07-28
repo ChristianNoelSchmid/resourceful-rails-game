@@ -9520,7 +9520,7 @@ MonoBehaviour:
       Y: 47
     Rivers: 000000000000
     CityId: 0
-  - Type: 0
+  - Type: 5
     Id:
       X: 24
       Y: 48
