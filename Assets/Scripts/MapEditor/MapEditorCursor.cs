@@ -166,7 +166,7 @@ namespace Rails.MapEditor
             {
                 Gizmos.color = Color.white;
                 var manager = Manager.Singleton;
-                if (manager != null && manager.Map != null && manager.Map.Nodes != null && manager.Map.Nodes.Length > 0)
+                if (manager != null && manager.MapData != null && manager.MapData.Nodes != null && manager.MapData.Nodes.Length > 0)
                 {
                     var nodeIds = manager.GetNodeIdsByPosition(transform.position, Radius);
                     foreach (var nodeId in nodeIds)
@@ -180,7 +180,7 @@ namespace Rails.MapEditor
                         if (HighlightSelectedSegments)
                         {
                             // iterate segments
-                            var segments = manager.Map.GetNodeSegments(nodeId);
+                            var segments = manager.MapData.GetNodeSegments(nodeId);
                             for (Cardinal c = 0; c < Cardinal.MAX_CARDINAL; ++c)
                             {
                                 var segment = segments[(int)c];

@@ -49,7 +49,7 @@ namespace Rails.MapEditor.Editor
             if (!manager)
                 return;
 
-            serializedObject = new SerializedObject(manager.Map);
+            serializedObject = new SerializedObject(manager.MapData);
             nodesProperty = serializedObject.FindProperty("Nodes");
             segmentsProperty = serializedObject.FindProperty("Segments");
 
@@ -109,7 +109,7 @@ namespace Rails.MapEditor.Editor
 
                             if (paintNodeType == NodeType.MajorCity || paintNodeType == NodeType.MediumCity || paintNodeType == NodeType.SmallCity)
                             {
-                                paintCityId = EditorGUILayout.Popup("City", paintCityId, manager.Map.Cities.Select(x => x.Name).ToArray());
+                                paintCityId = EditorGUILayout.Popup("City", paintCityId, manager.MapData.Cities.Select(x => x.Name).ToArray());
                             }
                         }
                         else
@@ -176,7 +176,7 @@ namespace Rails.MapEditor.Editor
                 goodVector2.x = EditorGUI.Popup(
                     new Rect(rect.x, rect.y, (rect.width / 2) - 24, EditorGUIUtility.singleLineHeight),
                     goodVector2.x,
-                    manager.Map.Goods.Select(x => x.Name).ToArray()
+                    manager.MapData.Goods.Select(x => x.Name).ToArray()
                     );
 
                 // draw good amount box
@@ -273,7 +273,7 @@ namespace Rails.MapEditor.Editor
                 return;
 
             // record undo
-            Undo.RecordObject(manager.Map, "Paint");
+            Undo.RecordObject(manager.MapData, "Paint");
 
             // get surrounding nodes
             var nodeIds = manager.GetNodeIdsByPosition(position, paintingRadius);

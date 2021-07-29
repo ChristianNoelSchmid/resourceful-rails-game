@@ -25,8 +25,8 @@ namespace Rails.Editor
 
             if (GUILayout.Button("Regenerate Grid"))
             {
-                Undo.RecordObject(manager.Map, "Generate map");
-                Generate(manager.Map);
+                Undo.RecordObject(manager.MapData, "Generate map");
+                Generate(manager.MapData);
             }
 
             GUILayout.EndVertical();
