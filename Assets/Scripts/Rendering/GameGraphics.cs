@@ -40,6 +40,8 @@ namespace Rails.Rendering
         // more than once at a time.
         private static HashSet<int> _currentlyRunningTrains;
 
+        public static EventHandler OnTrainMovementFinished;
+
         public static void Initialize(MapData mapData, int playerCount, Color [] playerColors)
         {
             _mapTokens = new Dictionary<NodeId, GameToken>();
@@ -209,8 +211,8 @@ namespace Rails.Rendering
         /// Moves a player train along the given `Route`.
         /// </summary>
         /// <param name="player">The player index to move.</param>
-        /// <param name="route">The nodes the player train will traverse on.</param>
-        public static void MoveTrain(int player, Route route) => _singleton.StartCoroutine(MoveTrain(player, route, 5.0f));
+        /// <param name="path">The nodes the player train will traverse on.</param>
+        public static void MoveTrain(int player, List<NodeId> path) => _singleton.StartCoroutine(CMoveTrain(player, path, 5.0f));
         
         #endregion
 
@@ -285,11 +287,11 @@ namespace Rails.Rendering
         }
 
         // Moves a player train through the given `Route`
-        private static IEnumerator MoveTrain(int player, Route route, float speed)
+        private static IEnumerator CMoveTrain(int player, List<NodeId> path, float speed)
         {
             if (player < 0 || player >= _playerTrains.Length)
                 yield break;
-            if (route == null || route.Distance == 0)
+            if (path == null || path.Count == 0)
                 yield break;
 
             if (_currentlyRunningTrains.Contains(player))
@@ -303,23 +305,23 @@ namespace Rails.Rendering
             tr.gameObject.SetActive(true);
 
             Vector3 nextPoint;
-            var nextRotation = Utilities.GetCardinalRotation(Utilities.CardinalBetween(route.Nodes[0], route.Nodes[1]));
+            var nextRotation = Utilities.GetCardinalRotation(Utilities.CardinalBetween(path[0], path[1]));
 
-            tr.position = Utilities.GetPosition(route.Nodes[0]);
+            tr.position = Utilities.GetPosition(path[0]);
             tr.rotation = nextRotation;
 
-            for (int i = 0; i < route.Distance; ++i)
+            for (int i = 0; i < path.Count - 1; ++i)
             {
-                nextPoint = Utilities.GetPosition(route.Nodes[i + 1]);
-                nextRotation = Utilities.GetCardinalRotation(Utilities.CardinalBetween(route.Nodes[i], route.Nodes[i + 1]));
+                nextPoint = Utilities.GetPosition(path[i + 1]);
+                nextRotation = Utilities.GetCardinalRotation(Utilities.CardinalBetween(path[i], path[i + 1]));
 
                 while (tr.position != nextPoint)
                 {
                     if (!_currentlyRunningTrains.Contains(player))
                     {
-                        tr.position = Utilities.GetPosition(route.Nodes.Last());
+                        tr.position = Utilities.GetPosition(path.Last());
                         tr.rotation = Utilities.GetCardinalRotation(
-                            Utilities.CardinalBetween(route.Nodes[route.Nodes.Count - 2], route.Nodes.Last())
+                            Utilities.CardinalBetween(path[path.Count - 2], path.Last())
                         );
                         yield break;
                     }
@@ -329,6 +331,7 @@ namespace Rails.Rendering
                     yield return null;
                 }
             }
+            OnTrainMovementFinished?.Invoke(_singleton, null);
         }
         #endregion
     }

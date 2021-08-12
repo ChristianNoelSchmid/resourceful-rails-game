@@ -125,7 +125,20 @@ namespace Rails.ScriptableObjects
             .Where(i => Nodes[i].CityId == Cities.IndexOf(city))
             .Select(i => NodeId.FromSingleId(i))
             .ToArray();
-        
+
+        public int[] GetGoodsAtCity(City city)
+            => Cities
+                .Where(c => c == city).First()?
+                .Goods.Select(g => g.x).ToArray() ?? new int[0];
+
+        public int[] GetCitiesWithGood(Good good)
+        {
+            int goodIndex = Goods.IndexOf(good);
+            var cities = new HashSet<City>(Cities.Where(c => c.Goods.Select(g => g.x).Contains(goodIndex)));
+
+            return cities.Select(c => Cities.IndexOf(c)).ToArray();
+        }
+
         // Cache for MapData bounds
         private Bounds ? _mapNodeBounds = null;
         /// <summary>

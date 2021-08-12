@@ -12,6 +12,7 @@ using Rails.UI;
 using System.Linq;
 using Assets.Scripts.Data;
 using Rails.Collections;
+using System.Collections;
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -36,6 +37,9 @@ namespace Rails {
         // Build Track
         public delegate void OnBuildTrackHandler(Manager manager);
         public event OnTurnEndEventHandler OnBuildTrack;
+
+        public EventHandler<TrainCityInteraction> OnTrainMeetsCityHandler;
+        public EventHandler OnTrainMeetsCityCompletion;
 
         #endregion
 
@@ -160,6 +164,9 @@ namespace Rails {
         private Route moveRoute = null;
         private List<Route> buildRoutes;
         private GameToken _highlightToken;
+
+        private bool _movingTrain = false;
+        private TrainMovement _trainMovement;
         #endregion
 
         #region Unity Events
@@ -169,6 +176,7 @@ namespace Rails {
             _singleton = this;
             _startRules = FindObjectOfType<GameStartRules>();
             _rules = MapData.DefaultRules;
+            _trainMovement = GetComponent<TrainMovement>();
 
             // generate start rules if empty
             if (_startRules == null) {
@@ -180,6 +188,9 @@ namespace Rails {
                     new StartPlayerInfo() { Name = "Player 2", Color = Color.blue }
                 };
             }
+
+            _trainMovement.OnMovementFinished += (_, __) => _movingTrain = false;
+            _trainMovement.OnMeetsCity += (_, interaction) => Debug.Log($"Train {interaction.PlayerIndex} meets with City {interaction.City.Name}");
         }
 
         private void Start()
@@ -204,11 +215,11 @@ namespace Rails {
                 if (currentPhase == 0 && !player.trainPlaced) {
                     Debug.Log("Place Train");
                     PlaceTrain(GameInput.MouseNodeId);
-								}
-								else {
+				}
+				else {
                     Debug.Log("Add Node");
                     AddNode(currentPath, GameInput.MouseNodeId);
-								}
+				}
             }
             if (GameInput.DeleteJustPressed) {
                 ClearPath(currentPath);
@@ -279,17 +290,34 @@ namespace Rails {
         // General gameplay methods.
 
         // Moves the train to final node in path.
-        public void MoveTrain() {
-            // Apply the Route
-            GameGraphics.MoveTrain(currentPlayer, moveRoute);
+        public void MoveTrain() => StartCoroutine(CMoveTrain());
+        private IEnumerator CMoveTrain() {
+            
+            var movePoints = Mathf.Min(_rules.TrainSpecs[player.trainStyle].movePoints, moveRoute.Distance); 
+
+            player.moveSegments.RemoveAt(0);
+            for (int i = 0; i < movePoints; ++i)
+            {
+                if (moveRoute.Nodes[i] == player.moveSegments[0])
+                    player.moveSegments.RemoveAt(0);
+            }
+
+            if(player.moveSegments[0] != player.trainPosition)
+                player.moveSegments.Insert(0, player.trainPosition);
+            
             player.trainPosition = moveRoute.Nodes.Last();
-            player.moveSegments.Insert(0, player.trainPosition);
+
+            _movingTrain = true;
+            _trainMovement.MoveTrain(currentPlayer, moveRoute.Nodes.Take(movePoints + 1).ToList());
+
+            while (_movingTrain)
+                yield return null;
 
             // Moving only updates the phase.
             GameLogic.UpdatePhase(PhasePanels, ref currentPhase, maxPhases);
             OnPhaseChange?.Invoke(this);
-            return;
         }
+
         // Discards the player's hand.
         public void DiscardHand() {
             // Remove and refill players' hand
@@ -334,6 +362,7 @@ namespace Rails {
             EndTurn();
             return;
         }
+
         // Places the current player's train at position.
         public bool PlaceTrain(NodeId position) {
             NodeType type = MapData.GetNodeAt(position).Type;
@@ -350,7 +379,9 @@ namespace Rails {
                 player.trainPlaced = true;
                 player.moveSegments.Insert(0, player.trainPosition);
                 Debug.Log("Train position = " + player.trainPosition.ToString());
-						}
+		    }
+
+            GameGraphics.PositionTrain(currentPlayer, position);
             return city;
         }
 				#endregion
@@ -390,6 +421,7 @@ namespace Rails {
             {
                 GameGraphics.HighlightRoute(moveRoute, null);
                 player.moveSegments.Clear();
+                player.moveSegments.Add(player.trainPosition);
             }
             else
             {
@@ -425,7 +457,7 @@ namespace Rails {
         public void RemoveNode(int path, int index) {
             if (currentPhase == 0) {
                 player.moveSegments.RemoveAt(index);
-						}
+		    }
             else {
                 buildPaths[path].RemoveAt(index);
 						}
@@ -447,9 +479,8 @@ namespace Rails {
         /// </summary>
         private void GameLoopSetup() {
             // Assign integers
-            //currentPlayer = 0;
+            currentPlayer = 0;
             currentPhase = -2;
-            currentPhase = 0;
             currentPath = 0;
             maxPhases = PhasePanels.Length;
 
@@ -520,15 +551,20 @@ namespace Rails {
             if (player.moveSegments.Count > 0) {
                 if (moveRoute != null) {
                     GameGraphics.HighlightRoute(moveRoute, null);
-								}
+				}
+
                 // Calculate the Route
                 moveRoute = Pathfinding.CheapestMove(
                     currentPlayer,
                     _rules.TrainSpecs[player.trainStyle].movePoints,
                     player.moveSegments.ToArray());
-                // Highlight the Route
-                GameGraphics.HighlightRoute(moveRoute, player.color);
-						}
+
+                    var movePoints = Mathf.Min(_rules.TrainSpecs[player.trainStyle].movePoints, moveRoute.Distance);
+                   
+                    // Highlight the Route
+                    GameGraphics.HighlightRoute(moveRoute.Nodes.Take(movePoints + 1).ToList(), player.color * 2.0f); 
+                    GameGraphics.HighlightRoute(moveRoute.Nodes.Take(movePoints).ToList(), player.color);
+		        }
             return;
 				}
         
